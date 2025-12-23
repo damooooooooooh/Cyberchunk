@@ -1,6 +1,7 @@
 # Project-specific documentation (keep these local)
 AGENTS.md
 README.md
+SESSION_NOTES.md
 
 # Python
 __pycache__/
