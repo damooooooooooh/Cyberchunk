@@ -42,6 +42,8 @@ def main():
     ingest_parser.add_argument("--edition", type=str, help="Edition or year metadata override (e.g., 2021).")
     ingest_parser.add_argument("--version", type=str, help="Version metadata override (e.g., A01 or v1).")
     ingest_parser.add_argument("--use-llm", action="store_true", help="Use configured LLM to extract risk-focused chunks during ingest.")
+    ingest_parser.add_argument("--enrich-tags", action="store_true", default=True, help="Phase 1: Enrich chunks with tags & STRIDE (default: True).")
+    ingest_parser.add_argument("--no-enrich-tags", dest="enrich_tags", action="store_false", help="Skip tag enrichment.")
     ingest_parser.set_defaults(func=run_ingest)
 
     # Extract command
@@ -105,7 +107,8 @@ def run_ingest(args, config):
             item_id=args.item_id,
             edition=args.edition,
             version=args.version,
-            llm_client=llm_client
+            llm_client=llm_client,
+            enrich_tags=args.enrich_tags  # Phase 1: Pass enrich_tags flag
         )
         print(f"\nSuccessfully ingested document: {doc_record.title} (ID: {doc_record.doc_id})")
         print(f"Extracted {len(section_nodes)} sections.")

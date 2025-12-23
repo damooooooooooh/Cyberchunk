@@ -1,8 +1,3 @@
-# Project-specific documentation (keep these local)
-AGENTS.md
-README.md
-SESSION_NOTES.md
-
 # Python
 __pycache__/
 *.py[cod]
@@ -114,3 +109,8 @@ temp/
 *.tmp
 *.bak
 *.swp
+
+# AI Agents
+.claude
+AGENTS.md
+CLAUDE.md

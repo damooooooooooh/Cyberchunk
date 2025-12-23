@@ -40,7 +40,19 @@ class ChunkRecord(BaseModel):
     canonical_id: Optional[str] = None  # e.g., OWASP-LLM01, NIST-800-53-AC-3, CVE-2023-1234
     title: Optional[str] = None
     text: str  # Cleaned chunk text
-    tags: Dict[str, List[str]] = Field(default_factory=lambda: {"keywords": [], "topics": [], "taxonomy": []})
+    tags: Dict[str, List[str]] = Field(default_factory=lambda: {
+        "keywords": [],
+        "topics": [],
+        "taxonomy": [],
+        "stride": [],           # Phase 1: STRIDE threat categories
+        "asset_types": [],      # Phase 1: API, Web App, Mobile, etc.
+        "technologies": [],     # Phase 1: OAuth, JWT, etc.
+        "security_controls": [] # Phase 1: Authentication, Authorization, etc.
+    })
+
+    # Phase 1: Detailed STRIDE analysis with reasoning
+    stride_analysis: Optional[List[Dict[str, str]]] = None
+    # [{"category": "Spoofing", "relevance": "high", "reasoning": "..."}]
 
     # url: Optional[str] = None  # For related_link chunks
     link_uri: Optional[str] = None  # For related_link chunks

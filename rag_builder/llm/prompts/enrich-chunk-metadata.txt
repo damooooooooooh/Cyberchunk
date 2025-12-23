@@ -1,0 +1,86 @@
+You are a cybersecurity knowledge extraction expert. Analyze the provided chunk and extract structured metadata.
+
+CHUNK DETAILS:
+Type: {chunk_type}
+Title: {title}
+Text: {text}
+Context: {section_path}
+Source: {source_uri}
+
+EXTRACTION RULES:
+1. Extract 5-10 relevant keywords (specific technical terms, not generic words)
+2. Identify 2-4 high-level security topics
+3. Extract taxonomy references (CWE-###, CAPEC-###, CVE-####-####, MITRE ATT&CK T####, ATLAS AML.T####.###)
+4. Map to STRIDE threat categories (only if applicable)
+5. Identify asset types this applies to
+6. Extract mentioned technologies/standards
+7. Identify security control types
+
+STRIDE THREAT MODEL CATEGORIES:
+- Spoofing: Impersonation, fake identity, credential theft
+- Tampering: Unauthorized modification of data or code
+- Repudiation: Denying actions, lack of audit trails
+- Information Disclosure: Unauthorized access to sensitive data
+- Denial of Service: Disrupting service availability
+- Elevation of Privilege: Gaining unauthorized elevated access
+
+ASSET TYPES (common examples):
+- API, REST API, GraphQL, SOAP API
+- Web Application, Single Page Application (SPA)
+- Mobile Application, iOS App, Android App
+- Database, SQL Database, NoSQL Database
+- Authentication Service, Authorization Service
+- Session Management, Token Service
+- File System, Object Storage
+- Message Queue, Event Stream
+
+TECHNOLOGIES (common examples):
+- OAuth, OAuth 2.0, OpenID Connect
+- JWT, JSON Web Token
+- SAML, Session Cookies
+- TLS, HTTPS, SSL
+- SQL, NoSQL, MongoDB, PostgreSQL
+- Kubernetes, Docker, AWS, Azure
+
+SECURITY CONTROLS (common types):
+- Authentication, Authorization, Access Control
+- Input Validation, Output Encoding
+- Encryption, Cryptography
+- Logging, Monitoring, Auditing
+- Rate Limiting, Throttling
+- Network Security, Firewall
+
+JSON OUTPUT FORMAT (STRICT JSON ONLY):
+{{
+  "keywords": ["keyword1", "keyword2", ...],
+  "topics": ["topic1", "topic2", ...],
+  "taxonomy": ["CWE-###", "CAPEC-###", ...],
+  "stride_categories": ["category1", "category2", ...],
+  "asset_types": ["type1", "type2", ...],
+  "technologies": ["tech1", "tech2", ...],
+  "security_controls": ["control1", "control2", ...],
+  "stride_analysis": [
+    {{
+      "category": "Spoofing",
+      "relevance": "high|medium|low",
+      "reasoning": "Brief explanation of why this category applies"
+    }}
+  ]
+}}
+
+IMPORTANT:
+- If a field doesn't apply, return empty array []
+- For STRIDE: Only include categories that are DIRECTLY relevant to this specific chunk
+- For weaknesses/attack_scenarios: STRIDE is highly relevant
+- For mitigations: Include STRIDE categories that the mitigation addresses
+- For related_links/frameworks: STRIDE may not apply (return [])
+- Be specific with keywords (prefer "JWT token manipulation" over "authentication")
+- Taxonomy: ONLY include if the CWE/CAPEC/CVE/MITRE/ATLAS code is EXPLICITLY written in the text or title
+  - DO NOT infer taxonomy codes from topic keywords - they must be literally present (e.g., "CWE-79", "AML.T0051.000")
+  - For related_link/related_framework chunks: Extract codes if they appear in the title/text, otherwise return []
+- For chunk_type "mitigation": Focus on what threats/weaknesses it addresses
+- For chunk_type "weakness": Focus on what can go wrong
+- For chunk_type "attack_scenario": Focus on the attack vector and impact
+- For chunk_type "related_framework" or "related_link": Focus on cross-references, may not have STRIDE or taxonomy
+
+NOW EXTRACT METADATA FROM THIS CHUNK:

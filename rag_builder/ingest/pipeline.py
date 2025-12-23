@@ -16,9 +16,62 @@ from rag_builder.parse.md_to_sections import md_to_sections
 from rag_builder.clean.normalize import normalize_text
 from rag_builder.llm.client import LLMClient
 from rag_builder.llm.utils import load_prompt_template
+from rag_builder.enrich.metadata_extractor import extract_chunk_metadata
 
 # Minimal quality guardrails for sections
 MIN_SECTION_CHARS = 50  # skip very short/noisy fragments (except top-level headings)
+
+def enrich_chunks_with_tags(chunks: List[ChunkRecord], llm_client) -> List[ChunkRecord]:
+    """
+    Phase 1: Second LLM pass to extract tags, STRIDE categories, and metadata.
+
+    Args:
+        chunks: List of ChunkRecords to enrich
+        llm_client: LLM client for API calls
+
+    Returns:
+        List of enriched ChunkRecords with populated tags
+    """
+    if not llm_client:
+        print("Warning: No LLM client provided for tag enrichment, skipping")
+        return chunks
+
+    print(f"\n--- Phase 1: Enriching {len(chunks)} chunks with tags & STRIDE ---")
+
+    enriched_chunks = []
+    for i, chunk in enumerate(chunks, 1):
+        try:
+            print(f"  Enriching chunk {i}/{len(chunks)} ({chunk.chunk_type}): {chunk.title or chunk.text[:50]}...")
+
+            # Call LLM to extract metadata
+            metadata = extract_chunk_metadata(chunk, llm_client)
+
+            # Populate tags
+            chunk.tags["keywords"] = metadata.get("keywords", [])
+            chunk.tags["topics"] = metadata.get("topics", [])
+            chunk.tags["taxonomy"] = metadata.get("taxonomy", [])
+            chunk.tags["stride"] = metadata.get("stride_categories", [])
+            chunk.tags["asset_types"] = metadata.get("asset_types", [])
+            chunk.tags["technologies"] = metadata.get("technologies", [])
+            chunk.tags["security_controls"] = metadata.get("security_controls", [])
+
+            # Optionally store detailed STRIDE analysis
+            if metadata.get("stride_analysis"):
+                chunk.stride_analysis = metadata["stride_analysis"]
+
+            print(f"    ✓ Tags: {len(chunk.tags.get('keywords', []))} keywords, "
+                  f"{len(chunk.tags.get('stride', []))} STRIDE categories, "
+                  f"{len(chunk.tags.get('asset_types', []))} asset types")
+
+            enriched_chunks.append(chunk)
+
+        except Exception as e:
+            print(f"  ⚠ Warning: Failed to enrich chunk {chunk.chunk_id}: {e}")
+            # Keep chunk without enrichment
+            enriched_chunks.append(chunk)
+
+    print(f"✓ Enrichment complete: {len(enriched_chunks)} chunks enriched\n")
+    return enriched_chunks
 
 def _load_prompt_template(template_name: str) -> str:
     """Loads a prompt template from the prompts directory."""
@@ -439,7 +492,8 @@ def ingest_document(
     item_id: Optional[str] = None,
     edition: Optional[str] = None,
     version: Optional[str] = None,
-    llm_client: Optional[LLMClient] = None
+    llm_client: Optional[LLMClient] = None,
+    enrich_tags: bool = True  # Phase 1: Enable tag enrichment by default
 ) -> Tuple[DocumentRecord, List[SectionNode], List[ChunkRecord]]:
     """
     Ingests a single document from a URI or local file, processes it,
@@ -636,6 +690,10 @@ Level: {section.heading_level}
                 print(f"Warning: LLM extraction failed: {e}")
                 import traceback
                 traceback.print_exc()
+
+    # Phase 1: Enrich chunks with tags & STRIDE (if enabled)
+    if enrich_tags and llm_client and llm_chunks:
+        llm_chunks = enrich_chunks_with_tags(llm_chunks, llm_client)
 
     return document_record, sections, llm_chunks, llm_raw_response
 
