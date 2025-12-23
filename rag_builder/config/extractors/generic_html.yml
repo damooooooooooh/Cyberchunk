@@ -1,0 +1,97 @@
+# rag_builder/config/extractors/generic_html.yml
+
+# Extractor configuration for generic HTML documents
+# This config defines rules to identify and classify sections into ChunkRecord types
+# using heading patterns and textual clues.
+
+metadata:
+  extractor_id: "generic-html-v1"
+  description: "Generic extractor for HTML content, primarily uses heading patterns."
+  publisher: "Generic"
+  edition: "1.0"
+
+# Rules for identifying ChunkRecord types based on section content or headings
+section_classification_rules:
+  # Rules are processed in order. First match wins for classification.
+  - chunk_type: "risk"
+    match_type: "heading_alias"
+    patterns:
+      - "Risk"
+      - "Vulnerability"
+      - "Threat"
+      - "Problem"
+      - "Issue"
+      - "Weakness"
+    # Optional: regex on section text to refine
+    text_regex:
+      - "vulnerab(ility|le)"
+      - "attack surface"
+      - "threat model"
+
+  - chunk_type: "mitigation"
+    match_type: "heading_alias"
+    patterns:
+      - "Mitigation"
+      - "Prevention"
+      - "Control"
+      - "Solution"
+      - "Recommendation"
+      - "Remediation"
+      - "How to Prevent"
+    # Optional: regex on section text to refine
+    text_regex:
+      - "prevent(s|ing)"
+      - "reduce(s|d|ing)"
+      - "protect(s|ed|ing)"
+
+  - chunk_type: "control"
+    match_type: "heading_alias"
+    patterns:
+      - "Security Control"
+      - "Standard"
+      - "NIST"
+      - "ISO"
+      - "Compliance"
+      - "Framework"
+    text_regex:
+      - "control(s)?"
+      - "standard(s)?"
+      - "framework(s)?"
+
+  - chunk_type: "general" # Fallback if no specific type is matched
+    match_type: "always"
+
+# Rules for ignoring sections (e.g., boilerplate, navigation)
+ignore_sections:
+  match_type: "heading_alias"
+  patterns:
+    - "Table of Contents"
+    - "References"
+    - "Footnotes"
+    - "Disclaimer"
+    - "About"
+    - "Contact"
+    - "Copyright"
+    - "Privacy Policy"
+    - "Terms of Service"
+
+# Rules for extracting canonical IDs (e.g., OWASP-LLM01) from headings
+canonical_id_extraction:
+  - pattern: 'OWASP-LLM(\d{2})'
+    chunk_type: "risk"
+    group: 1
+    prefix: "OWASP-LLM"
+  - pattern: '(CVE-\d{4}-\d{4,7})'
+    chunk_type: "vulnerability"
+    group: 1
+    
+# Potential rules for identifying relationships (more complex, may be LLM-assisted)
+# For rule-based: identify patterns like "This mitigation addresses X risk."
+relationship_extraction_rules:
+  # Example: Look for text where a mitigation might explicitly mention a risk ID
+  - relationship_type: "MITIGATES"
+    source_chunk_type: "mitigation"
+    target_chunk_type: "risk"
+    text_pattern: 'this (?:mitigation|solution) addresses (OWASP-LLM\d{2}|CVE-\d{4}-\d{4,7}|R-\w+)'
+    # This rule is simple; real rule-based extraction for relationships is hard.
+    # Often, relationships are inferred from proximity, document structure, or LLM.

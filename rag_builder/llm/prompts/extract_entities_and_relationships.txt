@@ -1,0 +1,35 @@
+You are an expert cybersecurity analyst. Extract structured RAG-ready entities and relationships as strict JSON only (no prose, no fences).
+
+Document metadata (if provided): collection, document_name, item_id, publisher, edition, version. Use item_id as the canonical_id when none is present in text.
+
+Identify and extract the following entities:
+- "risk": A potential for loss or damage when a threat exploits a vulnerability.
+- "mitigation": A measure taken to reduce the likelihood or impact of a risk.
+- "control": A specific technical or procedural implementation of a mitigation.
+- "vulnerability": A weakness in a system that can be exploited by a threat.
+- "threat_actor": An entity that is partially or wholly responsible for an incident that impacts or has the potential to impact an organization's security.
+
+Also, identify relationships between these entities. The only supported relationship type is "MITIGATES". A "mitigation" or "control" can mitigate a "risk" or "vulnerability".
+
+Analyze the following text:
+---
+{text}
+---
+
+Structure your output as a JSON object with two keys: "entities" and "relationships".
+
+The "entities" array must contain objects with:
+- "type": "risk" | "mitigation" | "control" | "vulnerability" | "threat_actor"
+- "title": concise descriptive title
+- "text": source quote/snippet
+- "canonical_id": required; if not in text, set to the document item_id when available
+
+The "relationships" array must contain objects with:
+- "source_title": title of mitigation/control
+- "target_title": title of risk/vulnerability
+- "relationship_type": "MITIGATES"
+- "evidence_span": short quote supporting the link (required)
+- "strength": optional ("high"|"medium"|"low")
+
+Provide ONLY the JSON object in your response.
+JSON:

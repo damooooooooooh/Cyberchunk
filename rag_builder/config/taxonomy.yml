@@ -1,0 +1,98 @@
+# rag_builder/config/taxonomy.yml
+
+# Defines a simple taxonomy for cybersecurity concepts.
+# Each top-level key is a category, and its value is a list of terms (keywords/phrases)
+# that indicate membership in that category. Synonyms can be included.
+
+# Example Categories:
+
+threat_actor_types:
+  - "state-sponsored"
+  - "nation-state"
+  - "apt"
+  - "advanced persistent threat"
+  - "cybercriminal"
+  - "hactivist"
+  - "insider threat"
+  - "script kiddie"
+
+attack_vectors:
+  - "phishing"
+  - "spear phishing"
+  - "watering hole"
+  - "social engineering"
+  - "malware"
+  - "ransomware"
+  - "spyware"
+  - "virus"
+  - "worm"
+  - "trojan"
+  - "zero-day"
+  - "supply chain attack"
+  - "brute force"
+  - "credential stuffing"
+  - "denial of service"
+  - "ddos"
+  - "man-in-the-middle"
+  - "mitm"
+  - "sql injection"
+  - "xss"
+  - "cross-site scripting"
+  - "buffer overflow"
+  - "privilege escalation"
+  - "remote code execution"
+  - "rce"
+
+security_controls:
+  - "encryption"
+  - "authentication"
+  - "multi-factor authentication"
+  - "mfa"
+  - "authorization"
+  - "access control"
+  - "firewall"
+  - "ids"
+  - "ips"
+  - "intrusion detection system"
+  - "intrusion prevention system"
+  - "security information and event management"
+  - "siem"
+  - "patch management"
+  - "vulnerability management"
+  - "security awareness training"
+  - "incident response"
+  - "backup and recovery"
+  - "data loss prevention"
+  - "dlp"
+
+compliance_standards:
+  - "gdpr"
+  - "hipaa"
+  - "pci dss"
+  - "nist"
+  - "iso 27001"
+  - "ccpa"
+  - "soc 2"
+
+vulnerability_management:
+  - "vulnerability scanning"
+  - "penetration testing"
+  - "pen test"
+  - "bug bounty"
+  - "asset management"
+  - "software composition analysis"
+  - "sca"
+  - "static analysis security testing"
+  - "sast"
+  - "dynamic analysis security testing"
+  - "dast"
+
+# You can add more categories as needed
+# network_security:
+#   - "vpn"
+#   - "segmentation"
+# cloud_security:
+#   - "iaas"
+#   - "paas"
+#   - "saas"
+#   - "cspm"

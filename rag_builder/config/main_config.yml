@@ -1,0 +1,29 @@
+general:
+  output_base_dir: "output"
+
+embeddings:
+  provider: "ollama" # or "bedrock"
+  ollama:
+    endpoint: "https://chat.meshanised.xyz/ollama/api"
+    model: "nomic-embed-text:latest"
+  bedrock:
+    region: "us-east-1"
+    model: "amazon.titan-embed-text-v2:0" # Example model
+    aws_profile: "default" # Optional AWS profile
+
+llm_validation:
+  enabled: true # Set to false to disable LLM validation
+  provider: "openai" # or "bedrock"
+  ollama:
+    endpoint: "https://chat.meshanised.xyz/ollama" # Default Ollama API (can be overridden)
+    model: "gemma3:27b" # Switched to llama3 as it's generally better for JSON generation
+  bedrock:
+    region: "us-east-1"
+    model: "anthropic.claude-3-sonnet-20240229-v1:0" # Example LLM for validation
+    aws_profile: "default" # Optional AWS profile
+  openai:
+    model: "gpt-4o-mini"   # or your chosen model
+    api_key: null  # optional if set in env
+    base_url: null         # optional (e.g., Azure/proxy)    
+  temperature: 0.1
+  max_tokens: 8192

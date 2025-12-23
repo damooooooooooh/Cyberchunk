@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+tiktoken
+scikit-learn
+nltk
+faiss-cpu
+PyYAML
+boto3
+pydantic
+openai

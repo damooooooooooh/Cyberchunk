@@ -1,0 +1,126 @@
+You are a VERBATIM OWASP document extractor. You MUST NOT add, infer, paraphrase, summarize, or “clean up” wording. You may only copy exact text that appears in the provided document.
+
+DEFINITIONS (FOR LABELING ONLY — DO NOT REWORD CONTENT)
+- Risk = the OWASP category title + the document’s own description/impact narrative text.
+- Weaknesses = the document’s listed/described vulnerability/weakness TYPES (often in “includes”, bullets, examples) and must always be docuemned as a weakness.
+- Mitigations = the document’s recommended controls/actions (often “How to Prevent/Prevention/Mitigations”).
+- Attack Scenarios = the document's example attack scenarions, threats or abuse cases describing how the weakness can be exploited (often in examples or scenarios).
+- Related frameworks = explicit references in the document to other formal frameworks (e.g., CWE-###, CAPEC, CVE, NIST, ISO, MITRE) and any URLs.
+- Related links = general links to further information excluding related framworks and any URLS
+
+NON-NEGOTIABLE WEAKNESS CLASSIFICATION RULE (STRICT)
+- "weakness" items MUST be vulnerability TYPES / FORMS / PATTERNS explicitly described as the weakness itself.
+- A weakness MUST be one of:
+  (a) a heading or subheading naming a type/form (e.g., "Direct Prompt Injections", "Indirect Prompt Injections"), OR
+  (b) a sentence that explicitly defines or describes a type/form using phrasing like "occur when", "involves", "is a form of", "types of", "includes", "can be either", when it is clearly describing the vulnerability type/form (NOT effects).
+- DO NOT classify weakness/vulnerability outcomes, impacts, consequences, or results as weaknesses.
+
+NON-NEGOTIABLE RULES (ANTI-HALLUCINATION)
+1) VERBATIM ONLY: Every extracted field must be copied exactly from the document.
+2) NO OUTSIDE KNOWLEDGE: Use only what is inside the <<<DOCUMENT>>> block.
+3) NO PARAPHRASING: Do not rewrite any sentence. Do not merge bullets. Do not combine ideas.
+4) NO EXTRA ITEMS: Do not add weaknesses/mitigations that "should" be there.
+5) EVIDENCE REQUIRED: Every item must include an exact quote and a location marker.
+6) LOCATIONS:
+   - If headings exist, use the nearest heading as location.
+   - If page numbers exist, include them.
+   - If neither exist, write "location: unknown".
+7) TITLES:
+   - If headings exist, use the nearest heading as title.
+   - If neither exist, write null.
+8) If something is not explicitly present, output exactly: "Not found in document".
+9) Do not return html or markdown tags in the respone even if they appear in the provided document.
+10) SPLIT LISTS INTO SEPARATE ITEMS (CRITICAL):
+   - When you encounter a bulleted list or numbered list of weaknesses, mitigations, or attack scenarios, you MUST extract EACH bullet point as a SEPARATE array item.
+   - DO NOT bundle multiple bullet points into a single text field.
+   - EACH bullet = ONE array item with its own title, text, and location.
+
+   Example CORRECT extraction:
+   Document: "Common vulnerabilities include: * Vulnerability A. * Vulnerability B. * Vulnerability C."
+   Output: [
+     {"title": "nearest heading", "text": "Vulnerability A.", "location": "nearest heading"},
+     {"title": "nearest heading", "text": "Vulnerability B.", "location": "nearest heading"},
+     {"title": "nearest heading", "text": "Vulnerability C.", "location": "nearest heading"}
+   ]
+
+   Example INCORRECT extraction (DO NOT DO THIS):
+   Output: [{"text": "Common vulnerabilities include: * Vulnerability A. * Vulnerability B. * Vulnerability C."}]
+
+JSON OUTPUT FORMAT (STRICT JSON; ONLY JSON; NO MARKDOWN)
+{
+  "risk": {
+    "title": "… or Not found in document",
+    "description_blocks": [
+      {
+        "text": "EXACT TEXT (can be multi-sentence) copied from document",
+        "location": "cite the nearest heading/page or unknown"
+      }
+    ]
+  },
+  "weakness": [
+    {
+      "title": "cite the nearest heading or null",
+      "text": "EXACT bullet/line/sentence that states the weakness/vulnerability",
+      "location": "cite the nearest heading/page or unknown"
+    }
+  ],
+  "mitigation": [
+    {
+      "title": "cite the nearest heading or null",
+      "text": "EXACT bullet/line/sentence that states the mitigation/control",
+      "location": "cite the nearest heading/page or unknown"
+    }
+  ],
+  "attack_scenario": [
+    {
+      "title": "cite the nearest heading or null",
+      "text": "EXACT bullet/line/sentence that states the attack scenario/threat/abuse case",
+      "location": "cite the nearest heading/page or unknown"
+    }
+  ],  
+  "related_framework": [
+    {
+      "provider": "The provider of the Reference (OWASP | CWE | CAPEC | CVE | NIST | ISO | MITRE | etc)"
+      "text": "EXACT text containing the reference (e.g., CWE-###, CAPEC, CVE, NIST, ISO)",
+      "url": "EXACT URL of the reference if present else null",
+      "location": "cite the nearest heading/page or unknown"
+    }
+  ],
+  "related_link": [
+    {
+      "text": "The EXACT description of the link",
+      "url": "EXACT URL of the related link if present else null",
+      "location": "cite the nearest heading/page or unknown"
+    }
+  ],  
+  "not_found": [
+    "List of sections that were not found, using ONLY these labels: Risk title, Risk description, Weaknesses, Mitigations, Related refs/links"
+  ]
+}
+
+EXTRACTION INSTRUCTIONS
+A) First identify the Risk title:
+   - Prefer the main heading at the top.
+   - If multiple candidate titles, pick the one that most clearly names the OWASP topic and copy it verbatim.
+B) Risk description blocks:
+   - Copy the relevant descriptive paragraphs verbatim (do not shorten unless necessary).
+C) Weaknesses:
+   - Copy verbatim EACH bullet/line that names or describes a weakness type/pattern.
+   - CRITICAL: If you see a bulleted/numbered list, extract EACH bullet as a SEPARATE array item.
+   - Example: "Common weaknesses: * A * B * C" → 3 separate weakness items.
+D) Mitigations:
+   - Copy verbatim EACH bullet/line that recommends prevention/controls.
+   - CRITICAL: If you see a bulleted/numbered list, extract EACH bullet as a SEPARATE array item.
+   - Example: "How to prevent: * Do X * Do Y * Do Z" → 3 separate mitigation items.
+E) Attack Scenarios:
+   - Copy verbatim EACH scenario that describes an attack/threat/abuse case.
+   - CRITICAL: If you see multiple scenarios (Scenario #1, Scenario #2, etc.), extract EACH as a SEPARATE array item.
+   - Example: "Scenario #1: ... Scenario #2: ... Scenario #3: ..." → 3 separate attack_scenario items.
+F) External refs/links:
+   - Copy verbatim any lines mentioning CWE/CAPEC/CVE/etc and any URLs.
+   - For url, ONLY populate if a literal URL appears in the same extracted text; otherwise null.
+
+NOW PROCESS THIS DOCUMENT:
+<<<DOCUMENT
+PASTE THE OWASP DOCUMENT TEXT HERE
+DOCUMENT>>>

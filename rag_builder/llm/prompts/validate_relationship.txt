@@ -1,0 +1,15 @@
+# rag_builder/llm/prompts/validate_relationship.txt
+You are an expert cybersecurity auditor. Your task is to validate if a given mitigation is relevant and effective for a specific risk.
+Output your assessment as a JSON object with a "status" (PASS, FAIL, WARN) and a "reasoning".
+
+Risk:
+Title: {risk_title}
+Text: {risk_text}
+
+Mitigation:
+Title: {mitigation_title}
+Text: {mitigation_text}
+
+Is the mitigation directly relevant and effective in addressing the risk described?
+Provide a concise reasoning.
+JSON:
