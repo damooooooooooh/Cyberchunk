@@ -58,14 +58,7 @@ JSON OUTPUT FORMAT (STRICT JSON ONLY):
   "stride_categories": ["category1", "category2", ...],
   "asset_types": ["type1", "type2", ...],
   "technologies": ["tech1", "tech2", ...],
-  "security_controls": ["control1", "control2", ...],
-  "stride_analysis": [
-    {{
-      "category": "Spoofing",
-      "relevance": "high|medium|low",
-      "reasoning": "Brief explanation of why this category applies"
-    }}
-  ]
+  "security_controls": ["control1", "control2", ...]
 }}
 
 IMPORTANT:

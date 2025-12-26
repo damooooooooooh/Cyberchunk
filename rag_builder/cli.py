@@ -17,6 +17,11 @@ from rag_builder.tag.pipeline import tag_chunks
 from rag_builder.embed.faiss_index import FaissIndex
 from uuid import UUID, uuid4
 
+# New modular imports
+from rag_builder.query import execute_query
+from rag_builder.ask import execute_rag, analyze_query as ask_analyze_query
+from rag_builder.enrich.pipeline import re_enrich_chunks
+
 def load_config(config_path: str) -> Dict[str, Any]:
     """Loads the YAML configuration file."""
     if not os.path.exists(config_path):
@@ -44,6 +49,9 @@ def main():
     ingest_parser.add_argument("--use-llm", action="store_true", help="Use configured LLM to extract risk-focused chunks during ingest.")
     ingest_parser.add_argument("--enrich-tags", action="store_true", default=True, help="Phase 1: Enrich chunks with tags & STRIDE (default: True).")
     ingest_parser.add_argument("--no-enrich-tags", dest="enrich_tags", action="store_false", help="Skip tag enrichment.")
+    ingest_parser.add_argument("--preserve-source", action="store_true", help="Preserve original source file with manifest for audit trail.")
+    ingest_parser.add_argument("--use-postgres", action="store_true", help="Write chunks directly to PostgreSQL instead of JSONL.")
+    ingest_parser.add_argument("--dataset-id", type=str, help="Dataset identifier for PostgreSQL (e.g., owasp_top10, cwe).")
     ingest_parser.set_defaults(func=run_ingest)
 
     # Extract command
@@ -60,6 +68,11 @@ def main():
 
     # Embed command
     embed_parser = subparsers.add_parser("embed", help="Generate embeddings for chunks.")
+    embed_parser.add_argument("--provider", type=str, choices=["openai", "ollama", "bedrock"], default="ollama",
+                             help="Embedding provider (default: ollama)")
+    embed_parser.add_argument("--model", type=str, help="Model name (provider-specific, e.g., nomic-embed-text)")
+    embed_parser.add_argument("--batch-size", type=int, default=50, help="Batch size for embedding generation")
+    embed_parser.add_argument("--dataset-id", type=str, help="Only embed chunks from this dataset")
     embed_parser.set_defaults(func=run_embed)
 
     # Index command
@@ -71,10 +84,50 @@ def main():
     validate_parser.set_defaults(func=run_validate)
 
     # Query command
-    query_parser = subparsers.add_parser("query", help="Run smoke tests/queries against the index.")
-    query_parser.add_argument("--query-string", type=str, required=True, help="Query string for retrieval.")
-    query_parser.add_argument("--k", type=int, default=5, help="Number of top results to retrieve.")
+    query_parser = subparsers.add_parser("query", help="Semantic search against PostgreSQL vector store.")
+    query_parser.add_argument("query_text", type=str, help="Query text for semantic search")
+    query_parser.add_argument("--limit", type=int, default=10, help="Number of results to return (default: 10)")
+    query_parser.add_argument("--chunk-type", type=str, help="Filter by chunk type (e.g., mitigation, weakness, risk)")
+    query_parser.add_argument("--asset-types", type=str, nargs="+", help="Filter by asset types (e.g., API Web)")
+    query_parser.add_argument("--taxonomy", type=str, nargs="+", help="Filter by taxonomy (e.g., CWE-79 CWE-89)")
+    query_parser.add_argument("--version", type=str, help="Filter by specific version (e.g., 2025)")
+    query_parser.add_argument("--provider", type=str, choices=["openai", "ollama", "bedrock"], default="ollama",
+                             help="Embedding provider for query (default: ollama)")
+    query_parser.add_argument("--model", type=str, help="Model name (provider-specific)")
+    query_parser.add_argument("--show-full", action="store_true", help="Show full text instead of preview")
+    query_parser.add_argument("--include-inactive", action="store_true", help="Include chunks from inactive datasets")
     query_parser.set_defaults(func=run_query)
+
+    # Ask command (RAG with LLM generation)
+    ask_parser = subparsers.add_parser("ask", help="Ask a question with LLM-generated answer (full RAG flow)")
+    ask_parser.add_argument("question", type=str, help="Your question")
+    ask_parser.add_argument("--llm-provider", type=str, choices=["openai", "ollama"], default="openai",
+                           help="LLM provider for answer generation (default: openai)")
+    ask_parser.add_argument("--llm-model", type=str, help="LLM model name (e.g., gpt-4o, llama3.1)")
+    ask_parser.add_argument("--embed-provider", type=str, choices=["openai", "ollama", "bedrock"], default="ollama",
+                           help="Embedding provider for retrieval (default: ollama)")
+    ask_parser.add_argument("--embed-model", type=str, help="Embedding model name")
+    ask_parser.add_argument("--limit", type=int, default=10, help="Number of chunks to retrieve (default: 10)")
+    ask_parser.add_argument("--chunk-type", type=str, help="Filter by chunk type")
+    ask_parser.add_argument("--asset-types", type=str, nargs="+", help="Filter by asset types")
+    ask_parser.add_argument("--taxonomy", type=str, nargs="+", help="Filter by taxonomy")
+    ask_parser.add_argument("--version", type=str, help="Filter by version")
+    ask_parser.add_argument("--show-context", action="store_true", help="Show retrieved context chunks")
+    ask_parser.add_argument("--include-inactive", action="store_true", help="Include inactive datasets")
+    ask_parser.set_defaults(func=run_ask)
+
+    # Enrich-tags command (re-enrich existing chunks with enhanced keywords)
+    enrich_tags_parser = subparsers.add_parser("enrich-tags", help="Re-enrich existing chunks with synonym-expanded keywords and metadata")
+    enrich_tags_parser.add_argument("--dataset-id", type=str, help="Only enrich chunks from this dataset (default: all)")
+    enrich_tags_parser.add_argument("--llm-provider", type=str, choices=["openai", "ollama"], default="openai",
+                                   help="LLM provider for keyword expansion (default: openai)")
+    enrich_tags_parser.add_argument("--llm-model", type=str, help="LLM model name")
+    enrich_tags_parser.add_argument("--batch-size", type=int, default=50, help="Number of chunks to process per batch (default: 50)")
+    enrich_tags_parser.add_argument("--update-stride", action="store_true",
+                                   help="Re-extract all metadata including STRIDE tags (tags.stride array)")
+    enrich_tags_parser.add_argument("--regenerate-embeddings", action="store_true",
+                                   help="Clear embeddings after enrichment to trigger regeneration")
+    enrich_tags_parser.set_defaults(func=run_enrich_tags)
 
     args = parser.parse_args()
 
@@ -97,6 +150,38 @@ def main():
 def run_ingest(args, config):
     print(f"Starting ingest for source: {args.source}")
     try:
+        from urllib.parse import urlparse
+
+        # Source preservation (if enabled)
+        source_manager = None
+        preserved_info = None
+        source_file_path = None
+        source_file_hash = None
+
+        if args.preserve_source:
+            from rag_builder.sources import SourceManager
+            source_manager = SourceManager()
+
+            is_url = bool(urlparse(args.source).scheme)
+            dataset_id = args.dataset_id or args.collection or "unknown"
+            version = args.version or args.edition or "unknown"
+            publisher = args.publisher or "Unknown"
+
+            print(f"\nPreserving source file for audit trail...")
+            preserved_info = source_manager.preserve_source(
+                source_path=args.source,
+                dataset_id=dataset_id,
+                version=version,
+                publisher=publisher,
+                is_url=is_url
+            )
+
+            source_file_path = preserved_info['preserved_path']
+            source_file_hash = preserved_info['file_hash']
+            print(f"  ✓ Source preserved: {source_file_path}")
+            print(f"  ✓ SHA256: {source_file_hash}")
+
+        # Run ingestion
         llm_client = get_llm_client(config) if args.use_llm else None
         doc_record, section_nodes, llm_chunks, llm_raw = ingest_document(
             args.source,
@@ -108,24 +193,145 @@ def run_ingest(args, config):
             edition=args.edition,
             version=args.version,
             llm_client=llm_client,
-            enrich_tags=args.enrich_tags  # Phase 1: Pass enrich_tags flag
+            enrich_tags=args.enrich_tags
         )
         print(f"\nSuccessfully ingested document: {doc_record.title} (ID: {doc_record.doc_id})")
         print(f"Extracted {len(section_nodes)} sections.")
 
-        output_base_dir = config.get("general", {}).get("output_base_dir", "output")
-        ingested_data_dir = os.path.join(output_base_dir, "ingested_data")
-        os.makedirs(ingested_data_dir, exist_ok=True)
+        # Write to PostgreSQL (if enabled)
+        if args.use_postgres:
+            from rag_builder.database import get_db_connection, insert_document, insert_chunk, insert_llm_interaction
 
-        write_records_to_jsonl([doc_record], ingested_data_dir, "documents.jsonl", mode='a')
-        write_records_to_jsonl(section_nodes, ingested_data_dir, "sections.jsonl", mode='a')
-        print(f"Saved DocumentRecord and SectionNodes to {ingested_data_dir}")
-        if llm_chunks:
-            extracted_data_dir = os.path.join(config.get("general", {}).get("output_base_dir", "output"), "extracted_data")
-            os.makedirs(extracted_data_dir, exist_ok=True)
-            per_doc_chunks = f"{doc_record.doc_id}_chunks.jsonl"
-            write_records_to_jsonl(llm_chunks, extracted_data_dir, per_doc_chunks, mode='w')
-            print(f"Saved {len(llm_chunks)} LLM-ingest chunks to {os.path.join(extracted_data_dir, per_doc_chunks)}")
+            print(f"\nWriting to PostgreSQL...")
+            try:
+                conn = get_db_connection(config)
+
+                # Ensure dataset exists
+                cursor = conn.cursor()
+                dataset_id = args.dataset_id or args.collection or "unknown"
+                cursor.execute("""
+                    INSERT INTO datasets (dataset_id, version, publisher, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (dataset_id, version) DO NOTHING
+                """, (
+                    dataset_id,
+                    args.version or args.edition or "unknown",
+                    args.publisher or "Unknown",
+                    datetime.now(timezone.utc)
+                ))
+                conn.commit()
+                cursor.close()
+
+                # Insert document
+                insert_document(
+                    conn,
+                    doc_id=doc_record.doc_id,
+                    dataset_id=dataset_id,
+                    source_uri=doc_record.source_uri,
+                    publisher=args.publisher or "Unknown",
+                    version=args.version or args.edition or "unknown",
+                    source_file_path=source_file_path,
+                    source_file_hash=source_file_hash,
+                    edition=args.edition,
+                    metadata={
+                        "title": doc_record.title,
+                        "collection": args.collection,
+                        "document_name": args.document_name,
+                        "item_id": args.item_id
+                    }
+                )
+                print(f"  ✓ Inserted document: {doc_record.doc_id}")
+
+                # Insert chunks
+                if llm_chunks:
+                    for chunk in llm_chunks:
+                        # ChunkRecord stores tags in chunk.tags dictionary
+                        tags = chunk.tags if chunk.tags else {
+                            "keywords": [],
+                            "topics": [],
+                            "taxonomy": [],
+                            "stride": [],
+                            "asset_types": [],
+                            "technologies": [],
+                            "security_controls": []
+                        }
+
+                        # Build metadata for chunk-type-specific fields
+                        metadata = {}
+                        if chunk.chunk_type == "related_link" and chunk.link_uri:
+                            metadata["link_uri"] = chunk.link_uri
+                            # Could add more link-specific fields:
+                            # metadata["link_title"] = chunk.title
+                            # metadata["link_description"] = ...
+
+                        insert_chunk(
+                            conn,
+                            chunk_id=chunk.chunk_id,
+                            doc_id=chunk.doc_id,
+                            section_id=chunk.section_id,
+                            section_path=chunk.section_path,
+                            chunk_type=chunk.chunk_type,
+                            text=chunk.text,
+                            canonical_id=chunk.canonical_id,
+                            title=chunk.title,
+                            tags=tags,
+                            source_uri=chunk.source_uri,
+                            source_locator=chunk.source_locator,
+                            source_file_path=source_file_path,
+                            source_file_hash=source_file_hash,
+                            ingestion_id=f"{dataset_id}_{args.version or 'unknown'}_{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+                            publisher=args.publisher,
+                            edition=args.edition,
+                            version=args.version or args.edition,
+                            metadata=metadata if metadata else None
+                        )
+
+                    print(f"  ✓ Inserted {len(llm_chunks)} chunks to PostgreSQL")
+
+                # Log LLM interaction for audit trail
+                if llm_raw and llm_client:
+                    try:
+                        insert_llm_interaction(
+                            conn,
+                            doc_id=doc_record.doc_id,
+                            llm_provider="openai",  # TODO: Get from config
+                            llm_model=llm_client.model_name,
+                            prompt=llm_raw.get("prompt", ""),
+                            response=llm_raw.get("response", {}),
+                            operation="ingest",
+                            prompt_template="ingest-document-and-extract-chunks.txt"
+                        )
+                        print(f"  ✓ Logged LLM interaction for audit")
+                    except Exception as e:
+                        print(f"  ⚠ Warning: Failed to log LLM interaction: {e}")
+
+                conn.close()
+
+            except Exception as e:
+                print(f"  ✗ PostgreSQL write failed: {e}")
+                import traceback
+                traceback.print_exc()
+                print(f"\nFalling back to JSONL output...")
+                args.use_postgres = False
+
+        # Write to JSONL (if not using PostgreSQL or as backup)
+        if not args.use_postgres:
+            output_base_dir = config.get("general", {}).get("output_base_dir", "output")
+            ingested_data_dir = os.path.join(output_base_dir, "ingested_data")
+            os.makedirs(ingested_data_dir, exist_ok=True)
+
+            write_records_to_jsonl([doc_record], ingested_data_dir, "documents.jsonl", mode='a')
+            write_records_to_jsonl(section_nodes, ingested_data_dir, "sections.jsonl", mode='a')
+            print(f"Saved DocumentRecord and SectionNodes to {ingested_data_dir}")
+
+            if llm_chunks:
+                extracted_data_dir = os.path.join(config.get("general", {}).get("output_base_dir", "output"), "extracted_data")
+                os.makedirs(extracted_data_dir, exist_ok=True)
+                per_doc_chunks = f"{doc_record.doc_id}_chunks.jsonl"
+                write_records_to_jsonl(llm_chunks, extracted_data_dir, per_doc_chunks, mode='w')
+                print(f"Saved {len(llm_chunks)} LLM-ingest chunks to {os.path.join(extracted_data_dir, per_doc_chunks)}")
+
+        # Save raw LLM response (always for debugging)
         if llm_raw:
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             per_doc_raw = f"{doc_record.doc_id}_{llm_client.model_name}_{ts}_response.json"
@@ -139,6 +345,8 @@ def run_ingest(args, config):
 
     except Exception as e:
         print(f"Error during ingestion: {e}")
+        import traceback
+        traceback.print_exc()
 
 def run_extract(args, config):
     print(f"Starting extraction for doc_id: {args.doc_id or 'all'}")
@@ -230,44 +438,121 @@ def run_tag(args, config):
         print(f"Error during tag command: {e}")
 
 def run_embed(args, config):
-    print(f"Running embed command using provider: {config['embeddings']['provider']}")
+    """
+    Phase 2: Generate embeddings for chunks in PostgreSQL.
+
+    Uses switchable embedding providers (OpenAI, Ollama, Bedrock).
+    """
+    print(f"\n=== Phase 2: Embedding Generation ===")
+    print(f"Provider: {args.provider}")
+
     try:
-        embedder = get_embedder(config)
-        print(f"Successfully instantiated embedder: {embedder.model_name}")
+        from rag_builder.embeddings import get_embedding_provider
+        from rag_builder.database import get_db_connection, get_chunks_without_embeddings, update_chunk_embedding
 
-        output_base_dir = config.get("general", {}).get("output_base_dir", "output")
-        tagged_data_dir = os.path.join(output_base_dir, "tagged_data")
-        tagged_chunks_file = os.path.join(tagged_data_dir, "chunks_tagged.jsonl")
+        # Initialize embedding provider
+        print(f"\nInitializing embedding provider...")
+        provider = get_embedding_provider(
+            provider=args.provider,
+            model=args.model
+        )
+        print(f"  ✓ Provider: {args.provider}")
+        print(f"  ✓ Model: {provider.get_model_name()}")
+        print(f"  ✓ Dimension: {provider.get_dimension()}")
 
-        if not os.path.exists(tagged_chunks_file):
-            print(f"Error: Tagged chunks file not found at {tagged_chunks_file}. Please run 'tag' command first.")
+        # Connect to database
+        print(f"\nConnecting to PostgreSQL...")
+        try:
+            conn = get_db_connection(config)
+            print(f"  ✓ Connected to database")
+        except Exception as e:
+            print(f"  ✗ Failed to connect: {e}")
+            print(f"\nPlease ensure PostgreSQL is running:")
+            print(f"  python scripts/setup_database.py")
             return
 
-        chunks_to_embed = read_records_from_jsonl(tagged_chunks_file, ChunkRecord)
+        # Get chunks without embeddings
+        print(f"\nFetching chunks without embeddings...")
+        chunks_to_embed = get_chunks_without_embeddings(
+            conn,
+            dataset_id=args.dataset_id
+        )
+
         if not chunks_to_embed:
-            print(f"No tagged chunks found in {tagged_chunks_file}. Nothing to embed.")
+            print(f"  ℹ No chunks found without embeddings")
             return
-        
-        print(f"Loaded {len(chunks_to_embed)} tagged chunks for embedding.")
 
-        # Embed the chunks
-        embedded_chunks = embed_chunks(chunks_to_embed, embedder)
-        print(f"Successfully embedded {len(embedded_chunks)} chunks using {embedder.model_name}.")
-        if embedded_chunks and embedded_chunks[0].embedding_vector:
-            print(f"First embedded chunk (ID: {embedded_chunks[0].chunk_id}, vector length: {len(embedded_chunks[0].embedding_vector)}).")
-        
-        # Save the embedded chunks to a model-specific JSONL file
-        embed_provider = config.get("embeddings", {}).get("provider")
-        embed_model_name = config.get("embeddings", {}).get(embed_provider, {}).get("model")
-        sanitized_model_name = embed_model_name.replace(":", "_").replace("/", "_").replace(".", "_")
-        
-        embedded_chunks_dir = os.path.join(output_base_dir, f"{embed_provider}_{sanitized_model_name}")
-        os.makedirs(embedded_chunks_dir, exist_ok=True)
-        write_records_to_jsonl(embedded_chunks, embedded_chunks_dir, "chunks_embedded.jsonl", mode='w')
-        print(f"Saved embedded chunks to {os.path.join(embedded_chunks_dir, 'chunks_embedded.jsonl')}")
+        print(f"  ✓ Found {len(chunks_to_embed)} chunks to embed")
 
+        # Batch processing
+        batch_size = args.batch_size
+        total_batches = (len(chunks_to_embed) + batch_size - 1) // batch_size
+
+        print(f"\nGenerating embeddings...")
+        print(f"  Batch size: {batch_size}")
+        print(f"  Total batches: {total_batches}")
+
+        embedded_count = 0
+        for batch_num in range(total_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, len(chunks_to_embed))
+            batch = chunks_to_embed[start_idx:end_idx]
+
+            print(f"\n  Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)...")
+
+            try:
+                # Extract texts and chunk IDs
+                texts = [chunk[1] for chunk in batch]
+                chunk_ids = [chunk[0] for chunk in batch]
+
+                # Generate embeddings (batch for OpenAI, sequential for Ollama/Bedrock)
+                embeddings = provider.embed_batch(texts)
+
+                # Update database
+                for chunk_id, embedding in zip(chunk_ids, embeddings):
+                    update_chunk_embedding(
+                        conn,
+                        chunk_id=chunk_id,
+                        embedding=embedding,
+                        embedding_model=provider.get_model_name()
+                    )
+                    embedded_count += 1
+
+                print(f"    ✓ Embedded {len(batch)} chunks")
+
+            except Exception as e:
+                print(f"    ✗ Batch {batch_num + 1} failed: {e}")
+                continue
+
+        conn.close()
+
+        print(f"\n{'=' * 60}")
+        print(f"✓ Embedding generation complete!")
+        print(f"{'=' * 60}")
+        print(f"Provider: {args.provider}")
+        print(f"Model: {provider.get_model_name()}")
+        print(f"Embedded: {embedded_count}/{len(chunks_to_embed)} chunks")
+
+        # Suggest creating vector index
+        if embedded_count > 0:
+            print(f"\nNext steps:")
+            print(f"  1. Create vector index (run once after all embeddings):")
+            print(f"     psql -h localhost -U postgres -d cyberchunk -c \\")
+            print(f"       \"CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);\"")
+            print(f"  2. Test semantic search with hybrid filters")
+
+    except ImportError as e:
+        print(f"\n✗ Missing dependency: {e}")
+        print(f"\nInstall required packages:")
+        print(f"  pip install psycopg2-binary pgvector requests")
+        if args.provider == "openai":
+            print(f"  pip install openai")
+        elif args.provider == "bedrock":
+            print(f"  pip install boto3")
     except Exception as e:
-        print(f"Error during embed command: {e}")
+        print(f"\n✗ Error during embed command: {e}")
+        import traceback
+        traceback.print_exc()
 
 def run_index(args, config):
     print(f"Running index command using provider: {config['embeddings']['provider']}")
@@ -335,54 +620,266 @@ def run_validate(args, config):
         print(f"Error during LLM validation: {e}")
 
 def run_query(args, config):
-    print(f"Running query for: '{args.query_string}'")
+    """
+    Semantic search using PostgreSQL pgvector with hybrid filtering.
+    Thin wrapper around query.execute_query().
+    """
+    print(f"\n{'=' * 60}")
+    print(f"Query: {args.query_text}")
+    print(f"{'=' * 60}\n")
+
     try:
-        # Determine the model-specific directory
-        output_base_dir = config.get("general", {}).get("output_base_dir", "output")
-        embed_provider = config.get("embeddings", {}).get("provider")
-        embed_model_name = config.get("embeddings", {}).get(embed_provider, {}).get("model")
-        sanitized_model_name = embed_model_name.replace(":", "_").replace("/", "_").replace(".", "_")
-        model_output_dir = os.path.join(output_base_dir, f"{embed_provider}_{sanitized_model_name}")
+        from rag_builder.embeddings import get_embedding_provider
 
-        # Check if index exists
-        if not os.path.exists(os.path.join(model_output_dir, "chunks.faiss")):
-            print(f"Error: FAISS index not found in {model_output_dir}. Please run 'index' command first.")
-            return
+        # Build filter summary
+        filters = []
+        if args.chunk_type:
+            filters.append(f"Type: {args.chunk_type}")
+        if args.asset_types:
+            filters.append(f"Assets: {', '.join(args.asset_types)}")
+        if args.taxonomy:
+            filters.append(f"Taxonomy: {', '.join(args.taxonomy)}")
+        if args.version:
+            filters.append(f"Version: {args.version}")
+        if not args.include_inactive:
+            filters.append("Active datasets only")
 
-        # Load the index and chunks
-        print("Loading FAISS index and chunk data...")
-        faiss_index = FaissIndex.load(model_output_dir, "chunks")
-        embedded_chunks = read_records_from_jsonl(os.path.join(model_output_dir, "chunks_embedded.jsonl"), ChunkRecord)
-        chunk_map = {chunk.chunk_id: chunk for chunk in embedded_chunks}
+        if filters:
+            print(f"Filters:")
+            for f in filters:
+                print(f"  • {f}")
+            print()
 
-        # Embed the query
-        print("Embedding query string...")
-        embedder = get_embedder(config)
-        query_embedding = embedder.embed_text(args.query_string)
-
-        # Perform the search
-        print(f"Searching for top {args.k} results...")
-        search_results = faiss_index.search(query_embedding, k=args.k)
+        # Execute query using modular pipeline
+        print(f"Initializing embedding provider: {args.provider}")
+        results = execute_query(
+            query_text=args.query_text,
+            config=config,
+            embed_provider=args.provider,
+            embed_model=args.model,
+            limit=args.limit,
+            chunk_type=args.chunk_type,
+            asset_types=args.asset_types,
+            taxonomy=args.taxonomy,
+            version=args.version,
+            include_inactive=args.include_inactive
+        )
 
         # Display results
-        if not search_results:
-            print("No results found.")
+        if not results:
+            print(f"✗ No results found\n")
             return
-        
-        print("\n--- Query Results ---")
-        for i, (distance, chunk_uuid) in enumerate(search_results):
-            result_chunk = chunk_map.get(chunk_uuid)
-            if result_chunk:
-                print(f"Result {i+1} (Distance: {distance:.4f}):")
-                print(f"  Chunk ID: {result_chunk.chunk_id}")
-                print(f"  Title: {result_chunk.title}")
-                print(f"  Source: {result_chunk.source_uri}")
-                print(f"  Text: {result_chunk.text[:250]}...\n")
-            else:
-                print(f"Result {i+1}: Could not find chunk data for UUID {chunk_uuid}")
 
+        print(f"✓ Found {len(results)} results\n")
+        print(f"{'=' * 60}\n")
+
+        for i, result in enumerate(results, 1):
+            # Color-coded similarity score
+            similarity = result['similarity']
+            if similarity >= 0.8:
+                sim_color = "🟢"
+            elif similarity >= 0.6:
+                sim_color = "🟡"
+            else:
+                sim_color = "🔴"
+
+            print(f"{i}. {sim_color} [{similarity:.3f}] {result['title'] or '(No title)'}")
+            print(f"   ID: {result['canonical_id'] or 'N/A'} | Type: {result['chunk_type']} | Version: {result['version']}")
+
+            # Show STRIDE tags if present
+            if result.get('tags') and result['tags'].get('stride'):
+                stride_tags = result['tags']['stride']
+                if stride_tags:
+                    print(f"   STRIDE: {', '.join(stride_tags)}")
+
+            # Show taxonomy if present
+            if result.get('tags') and result['tags'].get('taxonomy'):
+                taxonomy = result['tags']['taxonomy']
+                if taxonomy:
+                    print(f"   Taxonomy: {', '.join(taxonomy[:5])}")  # First 5
+
+            # Show text (full or preview)
+            if args.show_full:
+                print(f"\n   {result['text']}\n")
+            else:
+                preview = result['text'][:300] + "..." if len(result['text']) > 300 else result['text']
+                print(f"   {preview}")
+
+            print(f"   Source: {result['source_uri']}")
+            print()
+
+        print(f"{'=' * 60}\n")
+
+    except ImportError as e:
+        print(f"\n✗ Missing dependency: {e}")
+        print(f"\nInstall required packages:")
+        print(f"  pip install psycopg2-binary pgvector requests")
     except Exception as e:
-        print(f"Error during query command: {e}")
+        print(f"\n✗ Error during query: {e}")
+        import traceback
+        traceback.print_exc()
+
+def run_ask(args, config):
+    """
+    Full RAG flow with intelligent query planning.
+    Thin wrapper around ask.execute_rag().
+    """
+    print(f"\n{'=' * 60}")
+    print(f"Question: {args.question}")
+    print(f"{'=' * 60}\n")
+
+    try:
+        # Execute RAG using modular pipeline
+        print(f"Step 1: Analyzing query intent...")
+        print(f"  LLM provider: {args.llm_provider}\n")
+
+        result = execute_rag(
+            question=args.question,
+            config=config,
+            llm_provider=args.llm_provider,
+            llm_model=args.llm_model,
+            embed_provider=args.embed_provider,
+            embed_model=args.embed_model,
+            limit=args.limit,
+            chunk_type=args.chunk_type,
+            asset_types=args.asset_types,
+            taxonomy=args.taxonomy,
+            version=args.version,
+            include_inactive=args.include_inactive,
+            show_context=args.show_context
+        )
+
+        # Display query analysis
+        query_analysis = result.get('query_analysis', {})
+        if query_analysis:
+            print(f"  Intent: {query_analysis.get('intent', 'N/A')}")
+            if query_analysis.get('reasoning'):
+                print(f"  Reasoning: {query_analysis['reasoning']}")
+            print()
+
+        # Display auto-detected filters
+        filters_used = result.get('filters_used', {})
+        if any(filters_used.values()):
+            print(f"  Auto-detected filters:")
+            if filters_used.get('chunk_type'):
+                print(f"    • Chunk type: {filters_used['chunk_type']}")
+            if filters_used.get('asset_types'):
+                print(f"    • Asset types: {', '.join(filters_used['asset_types'])}")
+            if filters_used.get('taxonomy'):
+                print(f"    • Taxonomy: {', '.join(filters_used['taxonomy'])}")
+            if filters_used.get('version'):
+                print(f"    • Version: {filters_used['version']}")
+            print()
+
+        # Display retrieved context if requested
+        if args.show_context and result.get('context'):
+            print(f"{'─' * 60}")
+            print("RETRIEVED CONTEXT:")
+            print(f"{'─' * 60}\n")
+            for i, chunk in enumerate(result['context'], 1):
+                print(f"{i}. [{chunk['similarity']:.3f}] {chunk['title'] or '(No title)'}")
+                print(f"   {chunk['text'][:200]}...\n")
+            print(f"{'─' * 60}\n")
+
+        # Display answer
+        print(f"{'=' * 60}")
+        print("ANSWER:")
+        print(f"{'=' * 60}\n")
+        print(result['answer'])
+        print(f"\n{'=' * 60}")
+
+        # Show retrieval stats
+        filter_info = []
+        if filters_used.get('chunk_type'):
+            filter_info.append(f"type={filters_used['chunk_type']}")
+        if filters_used.get('asset_types'):
+            filter_info.append(f"assets={','.join(filters_used['asset_types'])}")
+        if filters_used.get('taxonomy'):
+            filter_info.append(f"taxonomy={','.join(filters_used['taxonomy'][:2])}")
+        if filters_used.get('version'):
+            filter_info.append(f"v={filters_used['version']}")
+
+        filter_str = f" ({', '.join(filter_info)})" if filter_info else ""
+        chunk_count = result.get('chunk_count', len(result.get('context', [])))  # Use chunk_count if available
+        print(f"Retrieved {chunk_count} chunks{filter_str} | LLM: {args.llm_provider}/{args.llm_model or 'default'}")
+        print(f"{'=' * 60}\n")
+
+    except ImportError as e:
+        print(f"\n✗ Missing dependency: {e}")
+        print(f"\nInstall required packages:")
+        print(f"  pip install psycopg2-binary pgvector requests")
+        print(f"  pip install openai  # for OpenAI provider")
+    except Exception as e:
+        print(f"\n✗ Error during ask command: {e}")
+        import traceback
+        traceback.print_exc()
+
+def run_enrich_tags(args, config):
+    """
+    Re-enrich existing chunks with synonym-expanded keywords.
+    Thin wrapper around enrich.re_enrich_chunks().
+    """
+    print(f"\n{'=' * 60}")
+    if args.update_stride:
+        print("Re-enriching chunks with full metadata extraction and synonym expansion")
+    else:
+        print("Re-enriching chunks with synonym expansion")
+    print(f"{'=' * 60}\n")
+
+    try:
+        # Override config with CLI arguments if provided
+        enrichment_config = config.copy()
+        if args.llm_provider or args.llm_model:
+            if 'llm_validation' not in enrichment_config:
+                enrichment_config['llm_validation'] = {}
+
+            if args.llm_provider:
+                enrichment_config['llm_validation']['provider'] = args.llm_provider
+
+            if args.llm_model:
+                provider = args.llm_provider or enrichment_config.get('llm_validation', {}).get('provider', 'openai')
+                if provider not in enrichment_config['llm_validation']:
+                    enrichment_config['llm_validation'][provider] = {}
+                enrichment_config['llm_validation'][provider]['model'] = args.llm_model
+
+        # Initialize LLM client
+        print(f"Initializing LLM provider...")
+        llm_client = get_llm_client(enrichment_config)
+        print(f"  ✓ Provider: {enrichment_config.get('llm_validation', {}).get('provider', 'openai')}")
+        print(f"  ✓ Model: {llm_client.model_name}\n")
+
+        # Execute enrichment using modular pipeline
+        result = re_enrich_chunks(
+            config=config,
+            llm_client=llm_client,
+            dataset_id=args.dataset_id,
+            batch_size=args.batch_size,
+            regenerate_embeddings=args.regenerate_embeddings,
+            update_stride=args.update_stride
+        )
+
+        # Display results
+        print(f"\n{'=' * 60}")
+        print("ENRICHMENT COMPLETE")
+        print(f"{'=' * 60}")
+        print(f"Total chunks: {result['total_chunks']}")
+        print(f"Enhanced: {result['enhanced_count']}")
+        print(f"Failed: {result['failed_count']}")
+        print(f"{'=' * 60}\n")
+
+        if args.regenerate_embeddings:
+            print("Next step: Regenerate embeddings")
+            print("  python -m rag_builder.cli embed --provider ollama --batch-size 50\n")
+
+    except ImportError as e:
+        print(f"\n✗ Missing dependency: {e}")
+        print(f"\nInstall required packages:")
+        print(f"  pip install psycopg2-binary pgvector requests")
+        print(f"  pip install openai  # for OpenAI provider")
+    except Exception as e:
+        print(f"\n✗ Error during enrich-tags command: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

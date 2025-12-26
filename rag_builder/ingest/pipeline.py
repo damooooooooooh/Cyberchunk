@@ -55,10 +55,6 @@ def enrich_chunks_with_tags(chunks: List[ChunkRecord], llm_client) -> List[Chunk
             chunk.tags["technologies"] = metadata.get("technologies", [])
             chunk.tags["security_controls"] = metadata.get("security_controls", [])
 
-            # Optionally store detailed STRIDE analysis
-            if metadata.get("stride_analysis"):
-                chunk.stride_analysis = metadata["stride_analysis"]
-
             print(f"    ✓ Tags: {len(chunk.tags.get('keywords', []))} keywords, "
                   f"{len(chunk.tags.get('stride', []))} STRIDE categories, "
                   f"{len(chunk.tags.get('asset_types', []))} asset types")

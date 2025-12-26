@@ -1,6 +1,14 @@
 general:
   output_base_dir: "output"
 
+database:
+  enabled: true
+  host: "localhost"
+  port: 5434
+  user: "devuser"
+  password: "devpass"
+  database: "cyberchunk"
+
 embeddings:
   provider: "ollama" # or "bedrock"
   ollama:

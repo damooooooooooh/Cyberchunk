@@ -46,6 +46,7 @@ env/
 secrets.yaml
 secrets.json
 config.local.yaml
+rag_builder/config/main_config.yml
 *.key
 *.pem
 
@@ -114,3 +115,9 @@ temp/
 .claude
 AGENTS.md
 CLAUDE.md
+
+# Internal Docs
+docs/
+sources/
+RAG_PROMPT_IMPROVEMENTS.md
+ARCHITECTURE.md

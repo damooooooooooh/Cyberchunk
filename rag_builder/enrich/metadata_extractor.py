@@ -65,8 +65,7 @@ def _get_empty_metadata() -> Dict[str, Any]:
         "stride_categories": [],
         "asset_types": [],
         "technologies": [],
-        "security_controls": [],
-        "stride_analysis": []
+        "security_controls": []
     }
 
 
@@ -81,31 +80,26 @@ def _validate_metadata_response(response: Dict[str, Any], chunk: ChunkRecord) ->
         "stride_categories": response.get("stride_categories", []),
         "asset_types": response.get("asset_types", []),
         "technologies": response.get("technologies", []),
-        "security_controls": response.get("security_controls", []),
-        "stride_analysis": response.get("stride_analysis", [])
+        "security_controls": response.get("security_controls", [])
     }
 
     # Clean up lists (remove empty strings, deduplicate)
     for key in validated:
         if isinstance(validated[key], list):
-            if key == "stride_analysis":
-                # Keep as-is (list of dicts) but validate structure
-                validated[key] = _validate_stride_analysis(validated[key])
-            else:
-                # Clean string lists
-                validated[key] = [
-                    item.strip()
-                    for item in validated[key]
-                    if item and isinstance(item, str) and item.strip()
-                ]
-                # Deduplicate while preserving order
-                seen = set()
-                deduped = []
-                for item in validated[key]:
-                    if item not in seen:
-                        seen.add(item)
-                        deduped.append(item)
-                validated[key] = deduped
+            # Clean string lists
+            validated[key] = [
+                item.strip()
+                for item in validated[key]
+                if item and isinstance(item, str) and item.strip()
+            ]
+            # Deduplicate while preserving order
+            seen = set()
+            deduped = []
+            for item in validated[key]:
+                if item not in seen:
+                    seen.add(item)
+                    deduped.append(item)
+            validated[key] = deduped
 
     # Validate STRIDE categories
     valid_stride = {
@@ -145,48 +139,5 @@ def _validate_metadata_response(response: Dict[str, Any], chunk: ChunkRecord) ->
     # Limit topics to top 5
     if len(validated["topics"]) > 5:
         validated["topics"] = validated["topics"][:5]
-
-    return validated
-
-
-def _validate_stride_analysis(stride_analysis: list) -> list:
-    """Validate STRIDE analysis structure"""
-    valid_stride = {
-        "Spoofing",
-        "Tampering",
-        "Repudiation",
-        "Information Disclosure",
-        "Denial of Service",
-        "Elevation of Privilege"
-    }
-
-    valid_relevance = {"high", "medium", "low"}
-
-    validated = []
-    for item in stride_analysis:
-        if not isinstance(item, dict):
-            continue
-
-        category = item.get("category", "")
-        relevance = item.get("relevance", "").lower()
-        reasoning = item.get("reasoning", "")
-
-        # Validate category
-        if category not in valid_stride:
-            continue
-
-        # Validate relevance
-        if relevance not in valid_relevance:
-            relevance = "medium"  # Default
-
-        # Validate reasoning
-        if not reasoning or not isinstance(reasoning, str):
-            reasoning = ""
-
-        validated.append({
-            "category": category,
-            "relevance": relevance,
-            "reasoning": reasoning.strip()
-        })
 
     return validated

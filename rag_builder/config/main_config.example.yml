@@ -1,0 +1,37 @@
+general:
+  output_base_dir: "output"
+
+database:
+  enabled: true
+  host: "${DB_HOST:-localhost}"
+  port: 5434
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  database: "${DB_NAME:-cyberchunk}"
+
+embeddings:
+  provider: "ollama" # or "bedrock"
+  ollama:
+    endpoint: "${OLLAMA_ENDPOINT:-http://localhost:11434/api}"
+    model: "${OLLAMA_EMBED_MODEL:-nomic-embed-text:latest}"
+  bedrock:
+    region: "${AWS_REGION:-us-east-1}"
+    model: "amazon.titan-embed-text-v2:0"
+    aws_profile: "${AWS_PROFILE:-default}"
+
+llm_validation:
+  enabled: true # Set to false to disable LLM validation
+  provider: "openai" # or "bedrock" or "ollama"
+  ollama:
+    endpoint: "${OLLAMA_ENDPOINT:-http://localhost:11434}"
+    model: "${OLLAMA_LLM_MODEL:-llama3.2:latest}"
+  bedrock:
+    region: "${AWS_REGION:-us-east-1}"
+    model: "anthropic.claude-3-sonnet-20240229-v1:0"
+    aws_profile: "${AWS_PROFILE:-default}"
+  openai:
+    model: "${OPENAI_MODEL:-gpt-4o-mini}"
+    api_key: "${OPENAI_API_KEY}"  # Set via environment variable
+    base_url: null  # optional (e.g., Azure/proxy)
+  temperature: 0.1
+  max_tokens: 8192

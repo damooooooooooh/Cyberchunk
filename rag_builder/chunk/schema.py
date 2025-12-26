@@ -50,10 +50,6 @@ class ChunkRecord(BaseModel):
         "security_controls": [] # Phase 1: Authentication, Authorization, etc.
     })
 
-    # Phase 1: Detailed STRIDE analysis with reasoning
-    stride_analysis: Optional[List[Dict[str, str]]] = None
-    # [{"category": "Spoofing", "relevance": "high", "reasoning": "..."}]
-
     # url: Optional[str] = None  # For related_link chunks
     link_uri: Optional[str] = None  # For related_link chunks
 

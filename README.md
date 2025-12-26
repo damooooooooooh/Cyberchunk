@@ -255,30 +255,53 @@ cyberchunk/
 
 ## ⚙️ Configuration
 
-### Config File: `rag_builder/config/main_config.yml`
+### Initial Setup
 
-```yaml
-general:
-  output_base_dir: "output"
+1. **Copy example config:**
+   ```bash
+   cp rag_builder/config/main_config.example.yml rag_builder/config/main_config.yml
+   ```
 
-llm:
-  provider: "openai"
-  openai:
-    model: "gpt-4o-mini"
-    temperature: 0.0
-    max_tokens: 4000
-    api_key: "${OPENAI_API_KEY}"  # Set via environment variable
+2. **Create .env file:**
+   ```bash
+   cp .env.example .env
+   ```
 
-embeddings:  # Future
-  provider: "openai"
-  openai:
-    model: "text-embedding-3-small"
-```
+3. **Configure environment variables in `.env`:**
+   ```bash
+   # Database Configuration
+   DB_HOST=localhost
+   DB_USER=your_db_user
+   DB_PASSWORD=your_db_password
+   DB_NAME=cyberchunk
 
-### Environment Variables
-```bash
-export OPENAI_API_KEY="sk-..."
-```
+   # OpenAI Configuration (if using OpenAI)
+   OPENAI_API_KEY=sk-your-api-key-here
+   OPENAI_MODEL=gpt-4o-mini
+
+   # Ollama Configuration (if using Ollama)
+   OLLAMA_ENDPOINT=http://localhost:11434
+   OLLAMA_EMBED_MODEL=nomic-embed-text:latest
+   OLLAMA_LLM_MODEL=llama3.2:latest
+   ```
+
+4. **Edit `main_config.yml`** to match your setup (database port, preferred providers, etc.)
+
+### Config File Structure
+
+The main configuration file (`rag_builder/config/main_config.yml`) supports:
+- **Database**: PostgreSQL connection settings with pgvector extension
+- **Embeddings**: Ollama, OpenAI, or AWS Bedrock providers
+- **LLM Validation**: Provider configuration for metadata extraction and query analysis
+
+See `rag_builder/config/main_config.example.yml` for a full example with environment variable placeholders.
+
+### Security Notes
+
+⚠️ **Never commit `main_config.yml` or `.env` to version control** - they contain sensitive credentials.
+- `main_config.yml` is in `.gitignore`
+- `.env` is in `.gitignore`
+- Use `main_config.example.yml` and `.env.example` as templates
 
 ---
 
