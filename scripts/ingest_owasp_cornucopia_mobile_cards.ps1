@@ -116,7 +116,8 @@ foreach ($source in $sources) {
 
     Write-Host ("Running: python " + ($args -join " ")) -ForegroundColor Gray
     try {
-        & python @args
+        # & python @args
+        Write-Host @args
         $exit = $LASTEXITCODE
 
         if ($exit -eq 0) {

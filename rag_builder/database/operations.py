@@ -152,26 +152,33 @@ def get_chunks_without_embeddings(
     conn,
     limit: int = None,
     dataset_id: str = None
-) -> List[Tuple[UUID, str]]:
+) -> List[Tuple[UUID, str, str, str]]:
     """
     Get chunks that don't have embeddings yet.
 
     Returns:
-        List of (chunk_id, text) tuples
+        List of (chunk_id, text, title, canonical_id) tuples
     """
     cursor = conn.cursor()
 
-    query = """
-        SELECT c.chunk_id, c.text
-        FROM chunks c
-        WHERE c.embedding IS NULL
-    """
-
-    params = []
-
     if dataset_id:
-        query += " AND c.publisher = %s"
-        params.append(dataset_id)
+        # Filter by dataset_id via documents table
+        query = """
+            SELECT c.chunk_id, c.text, c.title, c.canonical_id
+            FROM chunks c
+            JOIN documents d ON c.doc_id = d.doc_id
+            WHERE c.embedding IS NULL
+              AND d.dataset_id = %s
+        """
+        params = [dataset_id]
+    else:
+        # No filter - get all chunks without embeddings
+        query = """
+            SELECT c.chunk_id, c.text, c.title, c.canonical_id
+            FROM chunks c
+            WHERE c.embedding IS NULL
+        """
+        params = []
 
     if limit:
         query += " LIMIT %s"
@@ -181,7 +188,7 @@ def get_chunks_without_embeddings(
     results = cursor.fetchall()
     cursor.close()
 
-    return [(UUID(row[0]), row[1]) for row in results]
+    return [(UUID(row[0]), row[1], row[2], row[3]) for row in results]
 
 
 def update_chunk_embedding(
@@ -250,7 +257,7 @@ def search_chunks(
     """
     cursor = conn.cursor()
 
-    # Build query with dataset join for version filtering
+    # Build query with dataset join for version filtering and dataset name
     query = """
         SELECT
             c.chunk_id,
@@ -262,6 +269,7 @@ def search_chunks(
             c.source_uri,
             c.version,
             c.publisher,
+            ds.name,
             1 - (c.embedding <=> %s::vector) as similarity
         FROM chunks c
         JOIN documents d ON c.doc_id = d.doc_id
@@ -316,7 +324,8 @@ def search_chunks(
             "source_uri": row[6],
             "version": row[7],
             "publisher": row[8],
-            "similarity": float(row[9])
+            "dataset_name": row[9],
+            "similarity": float(row[10])
         })
 
     cursor.close()

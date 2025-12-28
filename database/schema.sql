@@ -13,6 +13,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================================
 CREATE TABLE datasets (
     dataset_id VARCHAR(100) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
     version VARCHAR(50) NOT NULL,
     publisher VARCHAR(100) NOT NULL,
     active BOOLEAN DEFAULT true,  -- Set to false when superseded by new version

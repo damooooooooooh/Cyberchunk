@@ -52,6 +52,7 @@ def main():
     ingest_parser.add_argument("--preserve-source", action="store_true", help="Preserve original source file with manifest for audit trail.")
     ingest_parser.add_argument("--use-postgres", action="store_true", help="Write chunks directly to PostgreSQL instead of JSONL.")
     ingest_parser.add_argument("--dataset-id", type=str, help="Dataset identifier for PostgreSQL (e.g., owasp_top10, cwe).")
+    ingest_parser.add_argument("--dataset-name", type=str, help="Human-readable dataset name (e.g., 'API Security Top 10'). Defaults to --collection if not specified.")
     ingest_parser.set_defaults(func=run_ingest)
 
     # Extract command
@@ -107,8 +108,8 @@ def main():
     ask_parser.add_argument("--embed-provider", type=str, choices=["openai", "ollama", "bedrock"], default="ollama",
                            help="Embedding provider for retrieval (default: ollama)")
     ask_parser.add_argument("--embed-model", type=str, help="Embedding model name")
-    ask_parser.add_argument("--limit", type=int, default=10, help="Number of chunks to retrieve (default: 10)")
-    ask_parser.add_argument("--chunk-type", type=str, help="Filter by chunk type")
+    ask_parser.add_argument("--limit", type=int, default=20, help="Number of chunks to retrieve (default: 20)")
+    ask_parser.add_argument("--chunk-type", type=str, help="Filter by chunk type (manual override only)")
     ask_parser.add_argument("--asset-types", type=str, nargs="+", help="Filter by asset types")
     ask_parser.add_argument("--taxonomy", type=str, nargs="+", help="Filter by taxonomy")
     ask_parser.add_argument("--version", type=str, help="Filter by version")
@@ -209,14 +210,17 @@ def run_ingest(args, config):
                 # Ensure dataset exists
                 cursor = conn.cursor()
                 dataset_id = args.dataset_id or args.collection or "unknown"
+                dataset_name = args.dataset_name or args.collection  # Use --dataset-name or fall back to --collection
                 cursor.execute("""
-                    INSERT INTO datasets (dataset_id, version, publisher, created_at)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (dataset_id, version) DO NOTHING
+                    INSERT INTO datasets (dataset_id, version, publisher, name, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (dataset_id, version) DO UPDATE SET
+                        name = EXCLUDED.name
                 """, (
                     dataset_id,
                     args.version or args.edition or "unknown",
                     args.publisher or "Unknown",
+                    dataset_name,
                     datetime.now(timezone.utc)
                 ))
                 conn.commit()
@@ -501,12 +505,36 @@ def run_embed(args, config):
             print(f"\n  Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)...")
 
             try:
-                # Extract texts and chunk IDs
-                texts = [chunk[1] for chunk in batch]
+                # Extract chunk data: (chunk_id, text, title, canonical_id)
                 chunk_ids = [chunk[0] for chunk in batch]
 
-                # Generate embeddings (batch for OpenAI, sequential for Ollama/Bedrock)
-                embeddings = provider.embed_batch(texts)
+                # Build augmented text: "Title (canonical_id): content"
+                augmented_texts = []
+                for chunk in batch:
+                    chunk_id, text, title, canonical_id = chunk
+
+                    # Build augmented text with metadata
+                    parts = []
+                    if title:
+                        parts.append(title)
+                    if canonical_id and canonical_id != title:
+                        parts.append(f"({canonical_id})")
+
+                    if parts:
+                        augmented_text = " ".join(parts) + ": " + text
+                    else:
+                        augmented_text = text
+
+                    augmented_texts.append(augmented_text)
+
+                # Show sample of augmented text (first chunk in batch)
+                if batch_num == 0 and len(augmented_texts) > 0:
+                    sample = augmented_texts[0]
+                    print(f"\n    Sample augmented text (first chunk):")
+                    print(f"    {sample[:200]}{'...' if len(sample) > 200 else ''}\n")
+
+                # Generate embeddings with augmented text (batch for OpenAI, sequential for Ollama/Bedrock)
+                embeddings = provider.embed_batch(augmented_texts)
 
                 # Update database
                 for chunk_id, embedding in zip(chunk_ids, embeddings):

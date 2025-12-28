@@ -25,7 +25,6 @@ def analyze_query(question: str, llm_provider: str, llm_model: Optional[str] = N
 Question: "{question}"
 
 Available filters:
-- chunk_type: "mitigation", "weakness", "risk", "attack_scenario", "example", "related_link", "description", "impact", "reference", "glossary"
 - asset_types: List of asset types mentioned in the question (e.g., ["Web Application"], ["API", "REST API"], ["Mobile Application"])
   Common examples: API, REST API, GraphQL, Web Application, Mobile Application, Database, Authentication Service,
   Authorization Service, Session Management, Token Service, File System, Cloud Service, Container, Network Device, etc.
@@ -33,10 +32,11 @@ Available filters:
 - taxonomy: List of CWE/CAPEC IDs (e.g., ["CWE-79", "CWE-89"])
 - version: Specific version like "2025", "2024", etc.
 
+NOTE: Do NOT filter by chunk_type automatically - semantic search will find relevant content across all types.
+
 Analyze the question and return ONLY a JSON object with these fields:
 {{
   "intent": "seeking_mitigations" | "seeking_vulnerabilities" | "seeking_risks" | "seeking_information" | "seeking_examples" | "seeking_definition",
-  "chunk_type": null or one of the chunk types above,
   "asset_types": null or list of asset types,
   "taxonomy": null or list of CWE/CAPEC IDs if mentioned,
   "version": null or version string if mentioned,
@@ -44,15 +44,12 @@ Analyze the question and return ONLY a JSON object with these fields:
 }}
 
 Guidelines:
-- "what is", "define", "explain what", "meaning of" → chunk_type="glossary"
-- "how do I", "prevent", "mitigate", "fix", "secure" → chunk_type="mitigation"
-- "what are", "risks", "vulnerabilities", "weaknesses" → chunk_type="weakness" or "risk"
-- "examples of", "show me" → chunk_type="example"
 - Extract asset types naturally from the question - use specific technical terms that would appear in documentation
 - Match the terminology style used in cybersecurity docs (e.g., "Web Application" not "web app", "REST API" not "API endpoint")
 - Only include asset_types if the question clearly references a specific type of system/component
 - Only include taxonomy if specific CWE/CAPEC IDs are mentioned
 - Only include version if year/version is mentioned
+- Leave filters as null if not clearly mentioned - let semantic search do the heavy lifting
 
 Return ONLY the JSON object, no other text."""
 
@@ -75,7 +72,7 @@ Return ONLY the JSON object, no other text."""
             result = response.choices[0].message.content.strip()
 
         elif llm_provider == "ollama":
-            model = llm_model or "llama3.2:latest"
+            model = llm_model or "gpt-oss:20b"
 
             response = requests.post(
                 "http://localhost:11434/api/chat",
@@ -136,7 +133,8 @@ def execute_rag(
     query_analysis = analyze_query(question, llm_provider, llm_model)
 
     # Merge auto-detected filters with manual overrides
-    final_chunk_type = chunk_type or query_analysis.get('chunk_type')
+    # NOTE: Only use chunk_type if manually specified by user (not auto-detected)
+    final_chunk_type = chunk_type  # Don't use query_analysis chunk_type
     final_asset_types = asset_types or query_analysis.get('asset_types')
     final_taxonomy = taxonomy or query_analysis.get('taxonomy')
     final_version = version or query_analysis.get('version')
@@ -169,11 +167,45 @@ def execute_rag(
     # Step 3: Build prompt with context
     context_parts = []
     for i, chunk in enumerate(results, 1):
+        # Build citation: Publisher Dataset_Name Version (canonical_id) - Chunk_Title
+        citation_parts = []
+
+        # Publisher (e.g., "OWASP")
+        if chunk.get('publisher'):
+            citation_parts.append(chunk['publisher'])
+
+        # Dataset name (e.g., "API Security Top 10")
+        if chunk.get('dataset_name'):
+            citation_parts.append(chunk['dataset_name'])
+
+        # Version (e.g., "2023")
+        if chunk.get('version'):
+            citation_parts.append(chunk['version'])
+
+        # Build main citation
+        citation = ' '.join(citation_parts) if citation_parts else ''
+
+        # Add canonical_id in parentheses (e.g., "(API1:2023)")
+        if chunk.get('canonical_id'):
+            if citation:
+                citation += f" ({chunk['canonical_id']})"
+            else:
+                citation = chunk['canonical_id']
+
+        # Add chunk title after dash (e.g., "- Broken Object Level Authorization")
+        if chunk.get('title') and chunk.get('title') != chunk.get('canonical_id'):
+            if citation:
+                citation += f" - {chunk['title']}"
+            else:
+                citation = chunk['title']
+
+        # Fallback if still empty
+        if not citation:
+            citation = 'N/A'
+
         context_part = f"[Chunk {i}]\n"
-        context_part += f"Title: {chunk['title'] or 'N/A'}\n"
-        context_part += f"ID: {chunk['canonical_id'] or 'N/A'}\n"
+        context_part += f"Citation: {citation}\n"
         context_part += f"Type: {chunk['chunk_type']}\n"
-        context_part += f"Source: {chunk['source_uri']}\n"
 
         if chunk.get('tags') and chunk['tags'].get('stride'):
             stride_tags = chunk['tags']['stride']
@@ -189,12 +221,24 @@ def execute_rag(
 
 CRITICAL INSTRUCTIONS:
 - You MUST answer ONLY using information from the reference material below - DO NOT use general knowledge or training data
-- If the reference material doesn't contain the answer, politely decline: "I don't have information about that in my current knowledge base. I specialize in [mention what topics you see in the reference material, e.g., 'OWASP security guidelines', 'web application security']. Is there something related I can help with?"
+- FIRST, review all provided reference chunks and identify which ones are actually relevant to the question
+- Ignore chunks that don't help answer the question, even if they contain related keywords
+- If NO chunks are relevant, politely decline: "I don't have information about that in my current knowledge base. I specialize in [mention what topics you see in the reference material, e.g., 'OWASP security guidelines', 'web application security']. Is there something related I can help with?"
+
+CITATION RULES (CRITICAL):
+- ONLY cite information that appears EXACTLY in the Citation field of the chunks below
+- DO NOT invent, extrapolate, or modify citation IDs (e.g., if you see "API3:2023", do NOT create "API34:2023" or "API30:2023")
+- DO NOT cite IDs that are not explicitly listed in the chunks below
+- Every claim you make MUST be supported by a chunk that actually contains that information
+- If you cannot find supporting information in the chunks, DO NOT make the claim
+- Use the exact Citation text from the chunks (e.g., "OWASP API Security Top 10 (API4:2023)")
+
+STYLE INSTRUCTIONS:
 - Be authoritative and direct - speak as the expert, not as someone reporting on reference material
 - DO NOT say "based on the reference material", "according to the sources", "the documentation shows" - just state the facts
 - DO NOT mention "chunks", "context", "embeddings", "knowledge base", or "reference material" in your answer
-- Cite sources naturally using document IDs and titles (e.g., "OWASP Top 10 2025 (A01:2025) identifies...")
-- Synthesize information across multiple sources when relevant
+- Use inline citations naturally within your explanation, not just at the end
+- Synthesize information across multiple relevant sources
 - Organize by STRIDE categories or risk levels when applicable
 - Be direct and actionable - focus on practical guidance
 - Be helpful and encouraging - end with actionable takeaways, impact statements, or offers of further assistance
@@ -208,7 +252,7 @@ Reference Material:
 
 USER QUESTION: {question}
 
-Answer authoritatively and helpfully using ONLY the reference material above."""
+First identify which chunks are relevant to the question, then answer authoritatively and helpfully using ONLY those relevant chunks."""
 
     prompt = system_prompt.format(context=context_text, question=question)
 
@@ -252,7 +296,7 @@ def _generate_answer(prompt: str, llm_provider: str, llm_model: Optional[str]) -
             return response.choices[0].message.content
 
         elif llm_provider == "ollama":
-            model = llm_model or "llama3.2:latest"
+            model = llm_model or "gpt-oss:20b"
 
             response = requests.post(
                 "http://localhost:11434/api/chat",
